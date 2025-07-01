@@ -1,10 +1,15 @@
 defaults:
   - _self_
-
+local_assets: True
 num_envs: 1
 freq: 40 # can only be divisible by 200
 camera_follow: True
 env_name: obstacle-dense
+# env_name: office  # 默认使用办公室环境
+# env_name: hospital
+# env_name: warehouse
+# env_name: warehouse-forklifts  
+# env_name: warehouse-shelves
 # env_name: full-warehouse
 
 sensor:
@@ -13,7 +18,6 @@ sensor:
   color_image: True
   depth_image: True
   semantic_segmentation: True
-
 sim_app:
   anti_aliasing: 0
   width: 1280
