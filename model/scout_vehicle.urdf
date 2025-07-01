@@ -359,11 +359,12 @@
         <mesh filename="package://isaac-scout-ros2/model/meshes/VLP16_scan.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- error origin -->
+    <!-- <collision>
       <geometry>
         <sphere radius="0"/>
       </geometry>
-    </collision>
+    </collision> -->
   </link>
   <!-- Gazebo requires the velodyne_gazebo_plugins package -->
   <gazebo reference="velodyne">

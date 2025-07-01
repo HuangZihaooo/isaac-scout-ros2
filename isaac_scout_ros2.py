@@ -9,6 +9,7 @@ from isaaclab.app import AppLauncher
 
 # 添加argparse参数
 parser = argparse.ArgumentParser(description="Scout机器人仿真环境运行程序")
+parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to spawn.")
 
 # 追加AppLauncher cli参数
 AppLauncher.add_app_launcher_args(parser)
@@ -22,108 +23,123 @@ simulation_app = app_launcher.app
 """其余所有内容如下"""
 
 import torch
-
-# 导入Scout相关模块
-from scout.scout_env import ScoutRSLEnvCfg, camera_follow
+import numpy as np
+import isaaclab.sim as sim_utils
+from isaaclab.scene import InteractiveScene
+from scout.scout_env import ScoutSceneCfg
+from scout.scout_ctrl import get_simple_scout_actions, get_movement_pattern
 import env.sim_env as sim_env
-# import scout.scout_sensors as scout_sensors
-import omni
-import carb
-import scout.scout_ctrl as scout_ctrl
-# import ros2.scout_ros2_bridge as scout_ros2_bridge
-# 导入isaaclab相关模块
-from isaaclab.sim import SimulationCfg, SimulationContext
 
 FILE_PATH = os.path.join(os.path.dirname(__file__), "cfg")
+
 @hydra.main(config_path=FILE_PATH, config_name="sim", version_base=None)
 def run_simulator(cfg):
     """运行仿真器主函数"""
     
-    # Scout环境设置
-    scout_env_cfg = ScoutRSLEnvCfg()
-    # scout_env_cfg.scene.num_envs = cfg.num_envs
-    scout_env_cfg.decimation = math.ceil(1./scout_env_cfg.sim.dt/cfg.freq)
-    scout_env_cfg.sim.render_interval = scout_env_cfg.decimation
-    # scout_ctrl.init_base_vel_cmd(cfg.num_envs)
-    # env, policy = scout_ctrl.get_scout_policy(scout_env_cfg)
-    sim_cfg = SimulationCfg(dt=0.01)
-    sim = SimulationContext(sim_cfg)
-    sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
-
-
-    # 仿真环境选择（在环境创建后加载）
-    if (cfg.env_name == "obstacle-dense"):
-        sim_env.create_obstacle_dense_env()  # 障碍物密集环境
-    elif (cfg.env_name == "office"):
-        sim_env.create_office_env(cfg.local_assets)  # 办公室环境
+    # 初始化仿真上下文
+    sim_cfg = sim_utils.SimulationCfg(device=args_cli.device)
+    sim = sim_utils.SimulationContext(sim_cfg)
+    sim.set_camera_view([3.5, 0.0, 3.2], [0.0, 0.0, 0.5])
+    
+    # 创建场景
+    scene_cfg = ScoutSceneCfg(num_envs=cfg.num_envs, env_spacing=2.0)
+    scene = InteractiveScene(scene_cfg)
+    
+    # 加载环境（在场景创建后）
+    print("正在加载仿真环境:", cfg.env_name)
+    if (cfg.env_name == "office"):
+        sim_env.create_office_env(cfg.local_assets)
+        print("已成功加载办公室环境")
     elif (cfg.env_name == "hospital"):
-        sim_env.create_hospital_env(cfg.local_assets)  # 医院环境  
+        sim_env.create_hospital_env(cfg.local_assets)
+        print("已成功加载医院环境")
     elif (cfg.env_name == "warehouse"):
-        sim_env.create_warehouse_env(cfg.local_assets)  # 仓库环境
+        sim_env.create_warehouse_env(cfg.local_assets)
+        print("已成功加载仓库环境")
     elif (cfg.env_name == "warehouse-forklifts"):
-        sim_env.create_warehouse_forklifts_env(cfg.local_assets)  # 带叉车的仓库环境
+        sim_env.create_warehouse_forklifts_env(cfg.local_assets)
+        print("已成功加载带叉车的仓库环境")
     elif (cfg.env_name == "warehouse-shelves"):
-        sim_env.create_warehouse_shelves_env(cfg.local_assets)  # 带货架的仓库环境
+        sim_env.create_warehouse_shelves_env(cfg.local_assets)
+        print("已成功加载带货架的仓库环境")
     elif (cfg.env_name == "full-warehouse"):
-        sim_env.create_full_warehouse_env(cfg.local_assets)  # 完整仓库环境
-
-    # Play the simulator
+        sim_env.create_full_warehouse_env(cfg.local_assets)
+        print("已成功加载完整仓库环境")
+    
+    # 重置仿真
     sim.reset()
-    # Now we are ready!
     print("[INFO]: Setup complete...")
-
-    # 传感器设置
-    # sm = scout_sensors.SensorManager(cfg.num_envs)
-    # lidar_annotators = sm.add_rtx_lidar()
-    # cameras = sm.add_camera(cfg.freq)
-
-    # 键盘控制
-    # system_input = carb.input.acquire_input_interface()
-    # system_input.subscribe_to_keyboard_events(
-    #     omni.appwindow.get_default_app_window().get_keyboard(), scout_ctrl.sub_keyboard_event)
     
-    # ROS2桥接
+    # 初始化ROS2
     rclpy.init()
-    # dm = scout_ros2_bridge.RobotDataManager(env, lidar_annotators, cameras, cfg)
-
-    # 运行仿真
-    sim_step_dt = float(scout_env_cfg.sim.dt * scout_env_cfg.decimation)
-    # obs, _ = env.reset()
     
-    print("仿真环境已启动，使用环境:", cfg.env_name)
+    # 运行仿真循环
+    run_simulation_loop(sim, scene)
     
-    while simulation_app.is_running():
-        start_time = time.time()
-        with torch.inference_mode():            
-            # 控制关节
-            # actions = policy(obs)
-
-            # 步进环境
-            # obs, _, _, _ = env.step(actions)
-
-            # ROS2数据发布
-            # dm.pub_ros2_data()
-            # rclpy.spin_once(dm)
-
-            # 相机跟随
-            # if (cfg.camera_follow):
-                # camera_follow(env)
-
-            # 限制循环时间
-            elapsed_time = time.time() - start_time
-            if elapsed_time < sim_step_dt:
-                sleep_duration = sim_step_dt - elapsed_time
-                time.sleep(sleep_duration)
-        actual_loop_time = time.time() - start_time
-        rtf = min(1.0, sim_step_dt/elapsed_time)
-        
-        # perform step
-        sim.step()
-        print(f"\r步进时间: {actual_loop_time*1000:.2f}ms, 实时因子: {rtf:.2f}", end='', flush=True)
-    
-    # dm.destroy_node()
+    # 清理资源
     rclpy.shutdown()
     simulation_app.close()
+    print("仿真已关闭")
+
+def run_simulation_loop(sim: sim_utils.SimulationContext, scene: InteractiveScene):
+    """运行仿真循环"""
+    sim_dt = sim.get_physics_dt()
+    sim_time = 0.0
+    count = 0
+    
+    print("开始Scout运动仿真...")
+    print("运动模式: 直线 -> 转弯 -> 波浪运动 (循环)")
+    
+    while simulation_app.is_running():
+        # 每500步重置一次
+        if count % 500 == 0:
+            # 重置计数器
+            if count > 0:  # 避免第一次输出
+                print(f"\n[INFO]: 重置Scout状态... (仿真时间: {sim_time:.1f}s)")
+            count = 0
+            
+            # 重置Scout到初始状态
+            root_state = scene["Scout"].data.default_root_state.clone()
+            root_state[:, :3] += scene.env_origins
+            
+            # 设置Scout的位置和速度
+            scene["Scout"].write_root_pose_to_sim(root_state[:, :7])
+            scene["Scout"].write_root_velocity_to_sim(root_state[:, 7:])
+            
+            # 重置关节状态
+            joint_pos, joint_vel = (
+                scene["Scout"].data.default_joint_pos.clone(),
+                scene["Scout"].data.default_joint_vel.clone(),
+            )
+            scene["Scout"].write_joint_state_to_sim(joint_pos, joint_vel)
+            
+            # 清理内部缓冲区
+            scene.reset()
+        
+        # 获取当前运动模式
+        movement_mode = get_movement_pattern(count)
+        
+        # 生成Scout控制动作
+        action = get_simple_scout_actions(sim_time, movement_mode)
+        
+        # 显示当前状态（每50步显示一次）
+        if count % 50 == 0:
+            print(f"\r时间: {sim_time:.1f}s, 模式: {movement_mode:8s}, "
+                  f"轮速: [{action[0][0]:.1f}, {action[0][1]:.1f}, {action[0][2]:.1f}, {action[0][3]:.1f}]", 
+                  end='', flush=True)
+        
+        # 应用控制命令到Scout
+        scene["Scout"].set_joint_velocity_target(action)
+        
+        # 更新仿真
+        scene.write_data_to_sim()
+        sim.step()
+        sim_time += sim_dt
+        count += 1
+        scene.update(sim_dt)
+        
+        # 简单的时间控制
+        time.sleep(0.01)
 
 if __name__ == "__main__":
     run_simulator()

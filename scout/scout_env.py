@@ -1,195 +1,87 @@
 from isaaclab.scene import InteractiveSceneCfg
-# from isaaclab_assets.robots.agilex import AGILEX_SCOUT_2_CFG
-
-from isaaclab.sensors import RayCasterCfg, patterns, ContactSensorCfg
 from isaaclab.utils import configclass
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.actuators import ImplicitActuatorCfg
 import isaaclab.sim as sim_utils
-import isaaclab.envs.mdp as mdp
-from isaaclab.managers import ObservationGroupCfg as ObsGroup
-from isaaclab.managers import ObservationTermCfg as ObsTerm
-from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.noise import UniformNoiseCfg
-from isaacsim.core.utils.viewports import set_camera_view
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-import scout.scout_ctrl as scout_ctrl
+from pathlib import Path
 
+# 获取当前脚本的目录，然后向上一级到项目根目录
+current_file = Path(__file__)
+project_root = current_file.parent.parent  # 向上两级：scout -> isaac-scout-ros2
+usd_path = str(project_root / "model" / "scout.usd")
 
-@configclass
-class ScoutSimCfg(InteractiveSceneCfg):
-    """Scout仿真场景配置"""
-    
-    # # 地面
-    # ground = AssetBaseCfg(
-    #     prim_path="/World/ground",
-    #     spawn=sim_utils.GroundPlaneCfg(color=(0.1, 0.1, 0.1), size=(300.0, 300.0)),
-    #     init_state=AssetBaseCfg.InitialStateCfg(
-    #         pos=(0, 0, 1e-4)
-    #     )
-    # )
-    
-    # # 灯光设置
-    # light = AssetBaseCfg(
-    #     prim_path="/World/Light",
-    #     spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
-    # )
-    # sky_light = AssetBaseCfg(
-    #     prim_path="/World/DomeLight",
-    #     spawn=sim_utils.DomeLightCfg(color=(0.9, 0.9, 0.9), intensity=500.0),
-    # )
-
-    # Ground-plane
-    cfg_ground = sim_utils.GroundPlaneCfg()
-    cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
-
-    # spawn distant light
-    cfg_light_distant = sim_utils.DistantLightCfg(
-        intensity=3000.0,
-        color=(0.75, 0.75, 0.75),
-    )
-    cfg_light_distant.func("/World/lightDistant", cfg_light_distant, translation=(1, 0, 10))
-
-    # Scout机器人配置
-    # agilex_scout: ArticulationCfg = AGILEX_SCOUT_2_CFG.replace(prim_path="{ENV_REGEX_NS}/Scout")
-    
-    # Scout接触传感器（如果需要的话）
-    # contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Scout/.*_wheel", history_length=3, track_air_time=True)
-
-    # Scout高度扫描仪
-    # height_scanner = RayCasterCfg(
-    #     prim_path="{ENV_REGEX_NS}/Scout/base_link",
-    #     offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20)), 
-    #     attach_yaw_only=True,
-    #     pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]), 
-    #     debug_vis=False,
-    #     mesh_prim_paths=["/World/ground"],
-    # )
-
-@configclass
-class ActionsCfg:
-    """环境动作配置"""
-    joint_pos = mdp.JointPositionActionCfg(asset_name="agilex_scout", joint_names=[".*"])
-
-@configclass
-class ObservationsCfg:
-    """观察配置"""
-
-    @configclass
-    class PolicyCfg(ObsGroup):
-        """策略组观察"""
-
-        # 观察项（保持顺序）
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel,
-                               params={"asset_cfg": SceneEntityCfg(name="agilex_scout")})
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel,
-                               params={"asset_cfg": SceneEntityCfg(name="agilex_scout")})
-        projected_gravity = ObsTerm(func=mdp.projected_gravity,
-                                    params={"asset_cfg": SceneEntityCfg(name="agilex_scout")},
-                                    noise=UniformNoiseCfg(n_min=-0.05, n_max=0.05))
-        # 速度命令
-        base_vel_cmd = ObsTerm(func=scout_ctrl.base_vel_cmd)
-
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel,
-                            params={"asset_cfg": SceneEntityCfg(name="agilex_scout")})
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel,
-                            params={"asset_cfg": SceneEntityCfg(name="agilex_scout")})
-        actions = ObsTerm(func=mdp.last_action)
-        
-        # 高度扫描
-        height_scan = ObsTerm(func=mdp.height_scan,
-                              params={"sensor_cfg": SceneEntityCfg("height_scanner")},
-                              clip=(-1.0, 1.0))
-
-        def __post_init__(self) -> None:
-            self.enable_corruption = False
-            self.concatenate_terms = True
-
-    # 观察组
-    policy: PolicyCfg = PolicyCfg()
-
-@configclass
-class CommandsCfg:
-    """MDP命令配置"""
-    base_vel_cmd = mdp.UniformVelocityCommandCfg(
-        asset_name="agilex_scout",
-        resampling_time_range=(0.0, 0.0),
-        debug_vis=True,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0), heading=(0, 0)
+SCOUT_CONFIG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=usd_path,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            max_depenetration_velocity=5.0,
         ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=True, 
+            solver_position_iteration_count=8, 
+            solver_velocity_iteration_count=0
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        joint_pos={
+            "front_left_wheel": 0.0,
+            "front_right_wheel": 0.0,
+            "rear_left_wheel": 0.0,
+            "rear_right_wheel": 0.0,
+        },
+        pos=(0.0, 0.0, 0.2),  # Scout放置在地面上方
+    ),
+    # 四轮差速控制配置
+    actuators={
+        "wheel_actuators": ImplicitActuatorCfg(
+            joint_names_expr=[".*_wheel"],  # 匹配所有轮子关节
+            effort_limit_sim=100.0,
+            velocity_limit_sim=20.0,
+            stiffness=0.0,      # 速度控制模式，刚度设为0
+            damping=10.0,       # 适当的阻尼
+        ),
+    },
+)
+
+@configclass
+class ScoutSceneCfg(InteractiveSceneCfg):
+    """Scout场景配置"""
+
+    # 地面
+    ground = AssetBaseCfg(
+        prim_path="/World/defaultGroundPlane", 
+        spawn=sim_utils.GroundPlaneCfg()
     )
 
-@configclass
-class EventCfg:
-    """事件配置"""
-    pass
+    # 灯光
+    dome_light = AssetBaseCfg(
+        prim_path="/World/Light", 
+        spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
+    )
 
-@configclass
-class RewardsCfg:
-    """奖励配置"""
-    pass
+    # Scout机器人
+    Scout = SCOUT_CONFIG.replace(prim_path="{ENV_REGEX_NS}/Scout")
 
-@configclass
-class TerminationsCfg:
-    """终止条件配置"""
-    pass
-
-@configclass
-class CurriculumCfg:
-    """课程配置"""
-    pass
-
-@configclass
-class ScoutRSLEnvCfg(ManagerBasedRLEnvCfg):
-    """Scout环境配置"""
-    # 场景设置
-    scene = ScoutSimCfg(num_envs=2, env_spacing=2.0)
-
-    # 基本设置
-    # observations = ObservationsCfg()
-    # actions = ActionsCfg()
+def calculate_wheel_velocities(linear_vel, angular_vel, wheel_base=0.498, track_width=0.498):
+    """
+    计算四轮差速小车的轮子速度
     
-    # 虚拟设置
-    # commands = CommandsCfg()
-    # rewards = RewardsCfg()
-    # terminations = TerminationsCfg()
-    # events = EventCfg()
-    # curriculum = CurriculumCfg()
-
-    def __post_init__(self):
-        # 查看器设置
-        self.viewer.eye = [-4.0, 0.0, 5.0]
-        self.viewer.lookat = [0.0, 0.0, 0.0]
-
-        # 步进设置
-        self.decimation = 8  # 步进
-
-        # 仿真设置
-        self.sim.dt = 0.005  # 仿真步进每
-        self.sim.render_interval = self.decimation  
-        self.sim.disable_contact_processing = True
-        self.sim.render.antialiasing_mode = None
-
-        # RSL环境控制设置
-        self.episode_length_s = 20.0  # 可以忽略
-        self.is_finite_horizon = False
-        # self.actions.joint_pos.scale = 0.25
-
-        # if self.scene.height_scanner is not None:
-        #     self.scene.height_scanner.update_period = self.decimation * self.sim.dt
-
-def camera_follow(env):
-    """相机跟随功能"""
-    if (env.unwrapped.scene.num_envs == 1):
-        robot_position = env.unwrapped.scene["agilex_scout"].data.root_state_w[0, :3].cpu().numpy()
-        robot_orientation = env.unwrapped.scene["agilex_scout"].data.root_state_w[0, 3:7].cpu().numpy()
-        rotation = R.from_quat([robot_orientation[1], robot_orientation[2], 
-                                robot_orientation[3], robot_orientation[0]])
-        yaw = rotation.as_euler('zyx')[0]
-        yaw_rotation = R.from_euler('z', yaw).as_matrix()
-        set_camera_view(
-            yaw_rotation.dot(np.asarray([-4.0, 0.0, 5.0])) + robot_position,
-            robot_position
-        )
+    Args:
+        linear_vel: 线速度 (m/s)
+        angular_vel: 角速度 (rad/s)
+        wheel_base: 轴距 (前后轮距离)
+        track_width: 轮距 (左右轮距离)
+    
+    Returns:
+        四个轮子的速度 [front_left, front_right, rear_left, rear_right]
+    """
+    # 对于四轮差速，前后轮具有相同的控制逻辑
+    # 左轮速度 = 线速度 - 角速度 * 轮距/2
+    # 右轮速度 = 线速度 + 角速度 * 轮距/2
+    
+    left_wheel_vel = linear_vel - angular_vel * track_width / 2.0
+    right_wheel_vel = linear_vel + angular_vel * track_width / 2.0
+    
+    # 四轮差速：前后轮使用相同的控制
+    return [left_wheel_vel, right_wheel_vel, left_wheel_vel, right_wheel_vel]
