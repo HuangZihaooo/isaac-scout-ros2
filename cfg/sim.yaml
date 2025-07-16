@@ -4,7 +4,7 @@ local_assets: True
 num_envs: 1
 freq: 50
 camera_follow: True
-env_name: obstacle-dense
+env_name: obstacle-dense  
 # env_name: office  # 默认使用办公室环境
 # env_name: hospital
 # env_name: warehouse

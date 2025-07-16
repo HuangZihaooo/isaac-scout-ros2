@@ -47,7 +47,14 @@ def run_simulator(cfg):
     
     # 加载环境（在场景创建后）
     print("正在加载仿真环境:", cfg.env_name)
-    if (cfg.env_name == "office"):
+    # Simulation environment
+    if (cfg.env_name == "obstacle-dense"):
+        sim_env.create_obstacle_dense_env() # obstacles dense
+    elif (cfg.env_name == "obstacle-medium"):
+        sim_env.create_obstacle_medium_env() # obstacles medium
+    elif (cfg.env_name == "obstacle-sparse"):
+        sim_env.create_obstacle_sparse_env() # obstacles sparse
+    elif (cfg.env_name == "office"):
         sim_env.create_office_env(cfg.local_assets)
         print("已成功加载办公室环境")
     elif (cfg.env_name == "hospital"):
